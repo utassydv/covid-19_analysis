@@ -52,24 +52,57 @@ df %>%
 # all the distributions look lognormal for the first blink, skewed with a right tail
 summary( df )
 # the summary shows this as well
+#It can be seen, that we might face some issue with the number of death, as there are some values with 0.
+#It will be an issue when we are taking the ln of it, as it will give us -Inf
+df %>% filter( death == 0 )
+#As we can see, these are usually areas where 
+#- not really affected by covid-19 (according to the numbers), or 
+#- places with small population or
+
+
 
 ######
-# Create new variables: Total death per capita, registered cases per capita
+# Create new variables: Total death per capita, registered cases per capita according to my assigment description
 df <- df %>% mutate( death_per_capita = death/population )
 df <- df %>% mutate( confirmed_per_capita = confirmed/population )
 
 
-######
-# Check basic scatter-plots!
-#   Two competing models:
-#     1) lifeexp = alpha + beta * gdptot
-#     2) lifeexp = alpha + beta * gdppc
-#
+# Take Log of confirmed_per_capita and death_per_capita
+df<- df %>% mutate( ln_death_per_capita = log( death_per_capita ),
+                     ln_confirmed_per_capita = log( confirmed_per_capita ) )
+
+# To check what happens if we replace -Inf values with a realy small number
+df_replaced <- df %>% mutate_if(is.numeric, function(x) ifelse(is.infinite(x), -100, x))
+
+# On the main thread I will work with the dataframe in which countries with zero death are neglected 
+# Countries with zero deaths can be neglected, as we can say, that they do not belong to the question, of this analyses, as they have no
+# registered deaths from covid-19. However, of course some can argue with this statement. 
+# For that I made some experiment where I replaced -Inf ln_death_per_capita with a "small" number. (see in appendix)
+df <- df %>% filter( ln_death_per_capita != -Inf )
+
+#To plot only meaningful variables at this point
+df_to_plot <- df %>% select( -c(active, confirmed, death, population, recovered))
+
+#checking the distribution of our x and y variable, it can be easy seen, that the ln transformed variables have a more symetric distribution
+df_to_plot %>%
+  keep(is.numeric) %>% 
+  gather() %>% 
+  ggplot(aes(value)) +
+  facet_wrap(~key, scales = "free") +
+  geom_histogram()+
+  theme_wsj() + 
+  scale_fill_wsj()
+# all the distributions look lognormal for the first blink, skewed with a right tail
+summary( df_to_plot )
+
+
+
 # Where to use log-transformation? - level-level vs level-log vs log-level vs log-log
 #
 
 # The my task is to use Number of registered death per capita and Number of registered case per capita
 # The question we can answer with the following scatterplots is where to use log-transformation? (level-level vs level-log vs log-level vs log-log)
+# According to the x and y variable distributions, we should get the best result with log-log
 
 # level-level
 ggplot( df , aes(x = confirmed_per_capita, y = death_per_capita)) +
@@ -100,240 +133,127 @@ ggplot( df , aes(x = confirmed_per_capita, y = death_per_capita)) +
   scale_y_continuous( trans = log_trans() ) +
   scale_x_continuous( trans = log_trans() )
 
+ggplot( df_with_no_death , aes(x = confirmed_per_capita, y = death_per_capita)) +
+  geom_point() +
+  geom_smooth(method="loess")+
+  labs(x = "Number of registered case per capita (ln scale)",y = "Number of registered death per capita (ln scale)")  +
+  scale_y_continuous( trans = log_trans() ) +
+  scale_x_continuous( trans = log_trans() )
+
 ####
 # Conclusions:
 # taking log of both axes is making the association close to linear!
-
-
-# Take Log of confirmed_per_capita and death_per_capita
-df<- df %>% mutate( ln_death_per_capita = log( death_per_capita ),
-                     ln_confirmed_per_capita = log( confirmed_per_capita ) )
+# For this reason for now on I will use the ln_confirmed_per_capita and ln_death_per_capita variables as x and y variables
 
 ############################################################################################################################################
 ############################################################################################################################################
-# TODO: might drop 0 death countries
-# TODO: all vallues are under 1, ln makes them negative? is it a problem?
+
 ######
-# Make some models:
-#   w ln_gdptot:
-#     reg1: lifeexp = alpha + beta * ln_gdptot
-#     reg2: lifeexp = alpha + beta_1 * ln_gdptot + beta_2 * ln_gdptot^2
-#     reg3: lifeexp = alpha + beta_1 * ln_gdptot + beta_2 * ln_gdptot^2 + beta_3 * ln_gdptot^3
-#   w ln_gdppc:
-#     reg4: lifeexp = alpha + beta * ln_gdppc
-#     reg5: lifeexp = alpha + beta_1 * ln_gdppc + beta_2 * ln_gdppc^2
-#     reg6: lifeexp = alpha + beta_1 * ln_gdppc * 1(gdppc < 50) + beta_2 * ln_gdppc * 1(gdppc >= 50)
-#   Extra: weighted-ols:
-#     reg7: lifeexp = alpha + beta * ln_gdppc, weights: population
+# Make some models w ln_confirmed_per_capita and ln_death_per_capita
+#     reg1: ln_death_per_capita = alpha + beta * ln_confirmed_per_capita
+#     reg2: ln_death_per_capita = alpha + beta_1 * ln_confirmed_per_capita + beta_2 * ln_confirmed_per_capita^2
+#
+#     reg3: ln_death_per_capita = alpha + beta_1 * ln_confirmed_per_capita * 1(confirmed_per_capita < 1.0e-03) + beta_2 * ln_confirmed_per_capita * 1(confirmed_per_capita >= 1.0e-03)
+#       #there is really no point to do this, as it is so linear, but that was the task...
+#     reg4: ln_death_per_capita = alpha + beta * ln_confirmed_per_capita, weights: population
 
 ###
-# Two ways to handle polynomials: 
-#
-# 1) Add powers of the variable(s) to the dataframe:
-df <- df %>% mutate( ln_gdptot_sq = ln_gdptot^2,
-                     ln_gdptot_cb = ln_gdptot^3,
-                     ln_gdppc_sq = ln_gdppc^2 )
-#
-# 2) Use 'poly(x,n)' function, which creates polynomials of x up to order n
-#     use this approach for graphs! may use it for models: 
-#                   positive - simpler, less new variables, 
-#                   negative - uglier names, harder to compare
-#     Note: poly() creates rotates your variables automatically to get mean independent variables
-#       use raw = TRUE if you dont want to rotate your variables.
+# Add powers of the variable(s) to the dataframe:
+df <- df %>% mutate( ln_confirmed_per_capita_sq = ln_confirmed_per_capita^2)
+
+
 
 # Do the regressions
-#
-# Built in regression in R
-reg_b <- lm( lifeexp ~ ln_gdptot , data = df )
-reg_b
-summary( reg_b )
-# formula: y ~ x1 + x2 + ..., note: intercept is automatically added
-# drawback: no robust SE, only homoskedastic SEs...
-# So instead of lm we use lm_robust from package estimatr
 
 # First model:
-reg1 <- lm_robust( lifeexp ~ ln_gdptot , data = df , se_type = "HC2" )
-reg1
-# Summary statistics
+reg1 <- lm_robust( ln_death_per_capita ~ ln_confirmed_per_capita , data = df , se_type = "HC2" )
 summary( reg1 )
 # Visual inspection:
-ggplot( data = df, aes( x = ln_gdptot, y = lifeexp ) ) + 
+ggplot( data = df, aes( x = ln_confirmed_per_capita, y = ln_death_per_capita ) ) + 
   geom_point( color='blue') +
   geom_smooth( method = lm , color = 'red' )
 
-# Second and third model with gdptot
-reg2 <- lm_robust( lifeexp ~ ln_gdptot + ln_gdptot_sq , data = df )
+# Second model:
+reg2 <- lm_robust( ln_death_per_capita ~ ln_confirmed_per_capita + ln_confirmed_per_capita_sq , data = df )
 summary( reg2 )
-ggplot( data = df, aes( x = ln_gdptot, y = lifeexp ) ) + 
+ggplot( data = df, aes( x = ln_confirmed_per_capita, y = ln_death_per_capita ) ) + 
   geom_point( color='blue') +
   geom_smooth( formula = y ~ poly(x,2) , method = lm , color = 'red' )
 
-reg3 <- lm_robust( lifeexp ~ ln_gdptot + ln_gdptot_sq + ln_gdptot_cb , data = df )
-ggplot( data = df, aes( x = ln_gdptot, y = lifeexp ) ) + 
-  geom_point( color='blue') +
-  geom_smooth( formula = y ~ poly(x,3) , method = lm , color = 'red' )
-
-
-# Models with gdp per capita
-reg4 <- lm_robust( lifeexp ~ ln_gdppc , data = df )
-summary( reg4 )
-ggplot( data = df, aes( x = ln_gdppc, y = lifeexp ) ) + 
-  geom_point( color='blue') +
-  geom_smooth( method = lm , color = 'red' )
-
-reg5 <- lm_robust( lifeexp ~ ln_gdppc + ln_gdppc_sq , data = df )
-ggplot( data = df, aes( x = ln_gdppc, y = lifeexp ) ) + 
-  geom_point( color='blue') +
-  geom_smooth( formula = y ~ poly(x,2) , method = lm , color = 'red' )
-
-# Regression with piecewise linear spline:
-# 1st define the cutoff for gdp per capita
-cutoff <- 50
-# 2nd we use a log transformation -> cutoff needs to be transformed as well
+# Third model:
+cutoff <- 0.001
 cutoff_ln<- log( cutoff )
+
 # Use simple regression with the lspline function
-?lspline
-reg6 <- lm_robust(lifeexp ~ lspline( ln_gdppc , cutoff_ln ), data = df )
-summary( reg6 )
-ggplot( data = df, aes( x = ln_gdppc, y = lifeexp ) ) + 
+reg3 <- lm_robust(ln_death_per_capita ~ lspline( ln_confirmed_per_capita , cutoff_ln ), data = df )
+summary( reg2 )
+ggplot( data = df, aes( x = ln_confirmed_per_capita, y = ln_death_per_capita ) ) + 
   geom_point( color='blue') +
   geom_smooth( formula = y ~ lspline(x,cutoff_ln) , method = lm , color = 'red' )
 
 
-# Weighted-OLS: use reg4 setup and weight with population
-reg7 <- lm_robust(lifeexp ~ ln_gdppc, data = df , weights = population)
-summary( reg7 )
+# Fourth model:
+# Weighted-OLS: use reg1 setup and weight with population
+reg4 <- lm_robust( ln_death_per_capita ~ ln_confirmed_per_capita , data = df , weights = population )
+summary( reg4 )
 
-ggplot(data = df, aes(x = ln_gdppc, y = lifeexp)) +
+ggplot(data = df, aes(x = ln_confirmed_per_capita, y = ln_death_per_capita)) +
   geom_point(data = df, aes(size=population),  color = 'blue', shape = 16, alpha = 0.6,  show.legend=F) +
   geom_smooth(aes(weight = population), method = "lm", color='red')+
-  scale_size(range = c(1, 15)) +
-  coord_cartesian(ylim = c(50, 85)) +
-  labs(x = "ln(GDP per capita, thousand US dollars) ",y = "Life expectancy  (years)")+
-  annotate("text", x = 4, y = 80, label = "USA", size=5)+
-  annotate("text", x = 2.7, y = 79, label = "China", size=5)+
-  annotate("text", x = 2,  y = 68, label = "India", size=5)
+  scale_size(range = c(1, 15))
 
 
 #####
 # Creating model summary with texreg
-data_out <- "Documents/Egyetem/CEU/Teaching_2020/Coding_with_R/git_coding_1/ECBS-5208-Coding-1-Business-Analytics/Class_8/out/"
-htmlreg( list(reg1 , reg2 , reg3 , reg4 , reg5 , reg6 , reg7),
+data_out <- "/Users/utassydv/Documents/workspaces/CEU/my_repos/covid-19_analysis/out"
+htmlreg( list(reg1 , reg2 , reg3 , reg4),
          type = 'html',
-         custom.model.names = c("GDP total - linear","GDP total - quadratic","GDP total - cubic",
-                                "GDP/capita - linear","GDP/capita - quadratic","GDP/capita - PLS",
-                                "GDP/capita - weighted linear"),
-         caption = "Modelling life expectancy and different wealth measures of countries",
+         custom.model.names = c("linear","quadratic","PLS", "weighted linear"),
+         caption = "Modelling death per capita and number of confirmed cases per capita of countries",
          file = paste0( data_out ,'model_comparison.html'), include.ci = FALSE)
 
 ######
-# Based on model comparison our chosen model is reg4 - lifeexp ~ ln_gdppc
-#   Substantive: - level-log interpretation works properly for countries
+# Based on model comparison our chosen model is reg1:
+#     reg1: ln_death_per_capita = alpha + beta * ln_confirmed_per_capita
+#   Substantive: - log-log interpretation works properly for countries
 #                - magnitude of coefficients are meaningful
 #   Statistical: - simple model, easy to interpret
 #                - Comparatively high R2 and captures variation well
+#   The next model, which is fairly good also, is the reg1 based model with population weight.
+#   by that, we are taking greater countries into account with a bigger weight, however, as we are allready using per capita measures,
+#   we don not need to take this into account again
+
+#################################
+## Testing hypothesis
+
+# H0: beta=0
+# HA: beta!=0
+summary( reg1 )
+#Multiple R-squared:  0.8216 ,	Adjusted R-squared:  0.8205 
+#F-statistic: 564.9 on 1 and 168 DF,  p-value: < 2.2e-16
+#p-value is almost zero which is <<< then 0.05 -> we can reject H0
+
+#The same result in a nother way:
+library(car)
+linearHypothesis( reg4 , "ln_confirmed_per_capita = 0")
 
 
 ######
 # Residual analysis.
 
-# lm_robust output is an `object` or `list` with different elements
-# Check the `Value` section
-?lm_robust
 
 # Get the predicted y values from the model
-df$reg4_y_pred <- reg4$fitted.values
+df$reg1_y_pred <- reg1$fitted.values
 # Calculate the errors of the model
-df$reg4_res <- df$lifeexp - df$reg4_y_pred 
+df$reg1_res <- df$ln_death_per_capita - df$reg1_y_pred 
 
+# Finding the best countries
 # Find countries with largest negative errors
-df %>% top_n( -5 , reg4_res ) %>% 
-  select( country , lifeexp , reg4_y_pred , reg4_res )
+df %>% top_n( -5 , reg1_res ) %>% 
+  select( country , ln_death_per_capita , reg1_y_pred , reg1_res )
 
+#Finding the worst countries
 # Find countries with largest positive errors
-df %>% top_n( 5 , reg4_res ) %>% 
-  select( country , lifeexp , reg4_y_pred , reg4_res )
-
-
-#################################
-## Testing hypothesis
-#
-
-##
-# 1) Coefficient is equal to 0:
-# Implemented by default...
-summary( reg4 )
-
-# 2) Coefficient is equal to your favorite value
-library(car)
-# Let test: H0: ln_gdppc = 5, HA: ln_gdppc neq 5
-linearHypothesis( reg4 , "ln_gdppc = 5")
-
-# 3) Or two coefficients are the same in one model: 
-#   in piecewise linear spline, the two coefficients are the same
-summary( reg6 )
-#   H0: lspline(ln_gdppc, cutoff_ln)1 - lspline(ln_gdppc, cutoff_ln)2 = 0
-#   HA: lspline(ln_gdppc, cutoff_ln)1 - lspline(ln_gdppc, cutoff_ln)2 neq 0
-linearHypothesis( reg6 , "lspline(ln_gdppc, cutoff_ln)1 = lspline(ln_gdppc, cutoff_ln)2")
-
-
-
-#################################
-## Prediction uncertainty
-#
-
-# CI of predicted value/regression line is implemented in ggplot
-ggplot( data = df, aes( x = ln_gdppc, y = lifeexp ) ) + 
-  geom_point( color='blue') +
-  geom_smooth( method = lm , color = 'red' , se = T )
-
-##
-# You can get them by predict function
-#   interval can be any of c("none", "confidence", "prediction")
-#   alpha = 0.05 (default) is the significance level
-###
-# CI of regression line
-pred4_CI <- predict( reg4, newdata = df , interval ="confidence" , alpha = 0.05 )
-pred4_CI
-
-# If you want you can ask to calculate the SEs for each point:
-# pred4_CI <- predict( reg4, newdata = df , se.fit=T,
-#                  interval ="confidence" , alpha = 0.05 )
-
-# Hand made CI for regression line
-# 1) Add to datatset:
-df <- df %>% mutate( CI_reg4_lower = pred4_CI$fit[,2],
-                     CI_reg4_upper = pred4_CI$fit[,3] )
-# 2) Plot
-ggplot(  ) + 
-  geom_point( data = df, aes( x = ln_gdppc, y = lifeexp ) , color='blue') +
-  geom_line( data = df, aes( x = ln_gdppc, y = reg4_y_pred ) , color = 'red' , size = 1 ) +
-  geom_line( data = df, aes( x = ln_gdppc, y = CI_reg4_lower ) , color = 'green' ,
-             size = 1 , linetype = "dashed" ) +
-  geom_line( data = df, aes( x = ln_gdppc, y = CI_reg4_upper ) , color = 'black' ,
-             size = 1 , linetype = "dashed" ) +
-  labs(x = "ln( GDP/capita, 2018 int. const. $, PPP)",y = "Life expectancy  (years)") 
-
-
-##
-# Now we change to get the prediction intervals!
-#
-pred4_PI <- predict( reg4, newdata = df , interval ="prediction" , alpha = 0.05 )
-
-# Hand made Prediction Interval for regression line
-# 1) Add to datatset (You can use the SE's as well if you wish...
-#                        then alpha does not have any meaning)
-df <- df %>% mutate( PI_reg4_lower = pred4_PI$fit[,2],
-                     PI_reg4_upper = pred4_PI$fit[,3] )
-# 2) Plot
-ggplot(  ) + 
-  geom_point( data = df, aes( x = ln_gdppc, y = lifeexp ) , color='blue') +
-  geom_line( data = df, aes( x = ln_gdppc, y = reg4_y_pred ) , color = 'red' , size = 1 ) +
-  geom_line( data = df, aes( x = ln_gdppc, y = PI_reg4_lower ) , color = 'green' ,
-             size = 1 , linetype = "dotted" ) +
-  geom_line( data = df, aes( x = ln_gdppc, y = PI_reg4_upper ) , color = 'black' ,
-             size = 1 , linetype = "dotted" ) +
-  labs(x = "ln( GDP/capita, 2018 int. const. $, PPP)",y = "Life expectancy  (years)") 
-
-
+df %>% top_n( 5 , reg1_res ) %>% 
+  select( country , ln_death_per_capita , reg1_y_pred , reg1_res )
 
