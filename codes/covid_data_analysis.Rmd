@@ -1,0 +1,256 @@
+---
+title: "Assignment - Data Analysis 2 and Coding with R"
+author: "David Utassy"
+date: "11/24/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+My task is to analyze the pattern of association between registered covid-19 cases per capita and registered number of death per capita in countries due to covid-19 on 05/11/2020.
+
+My variables are: "Number of registered death per capita" and "Number of registered case per capita" (Y and X). In every observation (row), I have both variables from a country on a given the date. These are the registered data from each country according to their official records. These data should be recorded by taking covid-19 tests.
+Of course we can have there are lot of possible data quality issues. For example political, economical affect on a given country's data can be significant, as they try to hide their real data sometimes. On the other hand differences between infrastructure and health care system can also have huge affect on our data. 
+
+
+## Selecting observations
+In the basic data cleaning I used the provided code by Ágoston Reguly, I used most of it to get a close to analyzable data set. In that data table I kept only countries, that have all the needed variables (confirmed, death, recovered, active, population). At that point we can see, that there are countries with 0 registered deaths. I have decided to drop these countries as by taking the log of death cases would give us -Inf in the future that will ruin the analyses. 
+
+(Another solution could have been to replace zero with a very small positive number, but in that case the question arises: -how small?-. A very small positive number we will get huge negative numbers after log transformation, that will "pull down" our regression line.)
+
+From the basic variables I had to create confirmed_per_capita and death_per_capita variable by dividing with the population of the given country. 
+
+```{r include=FALSE}
+# Clear memory
+rm(list=ls())
+
+# Packages to use
+library(tidyverse)
+# For scaling ggplots
+require(scales)
+# Estimate piecewise linear splines
+#install.packages("lspline")
+library(lspline)
+# Estimate robust SE
+#install.packages("estimatr")
+library(estimatr)
+# Compare models with robust SE
+#install.packages("texreg")
+library(texreg)
+# For different themes
+#install.packages("ggthemes")
+library(ggthemes)
+
+library(ggplot2)
+library("ggpubr")
+theme_set(
+  theme_bw() +
+    theme(legend.position = "top")
+  )
+
+# Call the data from github
+my_url <- "https://raw.githubusercontent.com/utassydv/covid-19_analysis/main/data/clean/covid_pop_11-05-2020_clean.csv"
+df <- read_csv( my_url )
+```
+
+## Histogram and summary statistics for x and y
+
+```{r, echo=FALSE, message=FALSE, fig.width=8, fig.height=2, warning=FALSE}
+df <- df %>% mutate( death_per_capita = death/population )
+df <- df %>% mutate( confirmed_per_capita = confirmed/population )
+
+
+# Take Log of confirmed_per_capita and death_per_capita
+df<- df %>% mutate( ln_death_per_capita = log( death_per_capita ),
+                     ln_confirmed_per_capita = log( confirmed_per_capita ) )
+
+# To check what happens if we replace -Inf values with a realy small number
+df_replaced <- df %>% mutate_if(is.numeric, function(x) ifelse(is.infinite(x), -100, x))
+
+# On the main thread I will work with the dataframe in which countries with zero death are neglected 
+# Countries with zero deaths can be neglected, as we can say, that they do not belong to the question, of this analyses, as they have no
+# registered deaths from covid-19. However, of course some can argue with this statement. 
+# For that I made some experiment where I replaced -Inf ln_death_per_capita with a "small" number. (see in appendix)
+df <- df %>% filter( ln_death_per_capita != -Inf )
+
+df <- df %>% mutate( ln_confirmed_per_capita_sq = ln_confirmed_per_capita^2)
+
+#To plot only meaningful variables at this point
+df_to_plot <- df %>% select( c(death_per_capita, confirmed_per_capita))
+
+#checking the distribution of our x and y variable, it can be easy seen, that the ln transformed variables have a more symetric distribution
+df_to_plot %>%
+  keep(is.numeric) %>% 
+  gather() %>% 
+  ggplot(aes(value)) +
+  facet_wrap(~key, scales = "free") +
+  geom_histogram()+
+  theme_wsj() + 
+  scale_fill_wsj()
+# all the distributions look lognormal for the first blink, skewed with a right tail
+summary( df_to_plot )
+```
+From the summary statistics, we can see, that both variables are skewed with a right tail. We can observe this on the distribution diagrams and also from the summary statistics. We can say that the distributions are mostly lognormal, hence it is likely that a log transformation on both axis will be beneficial. The mean is greater then the median with both variables which is the sign of skewness as well.
+
+## Investigate the transformation of variables
+According to the x and y variable distributions, we should get the best result with log-log. In the appendix I am showing the plots of all the possible transformation. From those graphs we can also see the the log-log option is the best as it makes the association close to linear!For this reason for now on I will use the ln_confirmed_per_capita and ln_death_per_capita variables as x and y variables
+
+## Presentation of my model choice
+According to the assignment description I experimented with 4 models, in the appendix I am reasoning my choice of model.
+
+My choice of model was Model 1:
+
+$y^{E}$ = $\alpha$ + $\beta$x, where: $\alpha$ = -4.63,  $\beta$ = 0.90
+
+It is a simple model, therefore it is easy to interpret, and it has comparatively high R2 and captures variation well. (see in appendix)
+
+The interpretation of $\alpha$ is rarely meaningful as average ln(y) is difficult to interpret. In contrast, the $\beta$  interpretation is possible.
+$\beta$ = 0.9 means, that on average the number of death is 0.9 percent higher on average if the registered cases is higher with one percent.
+
+## Hypothesis testing
+$H_0$: $\beta$ = 0
+
+$H_A$: $\beta$ $\ne$ 0
+
+I choose 5% as a significance level.
+The summary table of the hypothesis testing:
+```{r, echo=FALSE, message=FALSE, fig.width=8, fig.height=4, warning=FALSE}
+reg1 <- lm_robust( ln_death_per_capita ~ ln_confirmed_per_capita , data = df , se_type = "HC2" )
+library(car)
+summary(reg1)
+res <- linearHypothesis( reg1 , "ln_confirmed_per_capita = 0")
+knitr::kable(res, format="html")
+```
+From the summary we can see that the p-value is almost zero which is defenetly smaller then 0.05, therefore we can reject to null hypothesis.
+
+## Analysis of the residuals
+#### Best countries
+These countries are under the prediction line. These are the countries who saved (relatively) the most people due to covid. It is possible that they are able to do it because of their health care system and infrastructure (Singapore), however the quality of the data can affect these results into a positive direction as well in less developed countries.
+```{r, echo=FALSE, message=FALSE, fig.width=8, fig.height=4, warning=FALSE}
+# Get the predicted y values from the model
+library(xtable)
+
+df$reg1_y_pred <- reg1$fitted.values
+# Calculate the errors of the model
+df$reg1_res <- df$ln_death_per_capita - df$reg1_y_pred 
+
+# Finding the best countries
+# Find countries with largest negative errors
+df %>% top_n( -5 , reg1_res ) %>% 
+  select( country , ln_death_per_capita , reg1_y_pred , reg1_res )
+```
+#### Worst countries
+These countries are above the prediction line. These are the countries who lost (relatively) the most people due to covid. Possibly this is the result of bad decisions, bad health care system and infrastructure, as a country would not want to publish worst data than reality. 
+```{r, echo=FALSE, message=FALSE, fig.width=8, fig.height=4, warning=FALSE}
+#Finding the worst countries
+# Find countries with largest positive errors
+df %>% top_n( 5 , reg1_res ) %>% 
+  select( country , ln_death_per_capita , reg1_y_pred , reg1_res )
+
+```
+
+## Executive summary
+The main result of my analysis is that there is a positive correlation between the number of registered covid-19 cases per capita and the number of registered covid death per capita. It means that the number of death per capita is higher as the number of registered cases per capita is higher. The model I used on my variables (Y:number of registered covid-19 cases per capita, X: number of registered covid death per capita) was a simple linear regression.
+
+My models main message is, that on average the number of death is 0.9 percent higher on average if the registered cases is higher with one percent. A better data quality would strengthen my model to have a better external validity. The problem is that each and every country's data is originated by its country's own government, which is an unreliable factor as they might want to hide to truth. 
+
+
+## Appendix
+### Investigate the transformation of variables
+```{r, echo=FALSE, message=FALSE, fig.width=8, fig.height=4, warning=FALSE}
+# level-level
+p1 <- ggplot( df , aes(x = confirmed_per_capita, y = death_per_capita)) +
+  geom_point() +
+  geom_smooth(method="loess")+
+  labs(x = "Number of registered case per capita",y = "Number of registered death per capita") 
+
+# log-level
+p2 <- ggplot( df , aes(x = confirmed_per_capita, y = death_per_capita)) +
+  geom_point() +
+  geom_smooth(method="loess")+
+  labs(x = "Number of registered case per capita",y = "Number of registered death per capita (ln scale)")  +
+  scale_y_continuous( trans = log_trans() )
+
+# level-log
+p3 <- ggplot( df , aes(x = confirmed_per_capita, y = death_per_capita)) +
+  geom_point() +
+  geom_smooth(method="loess")+
+  labs(x = "Number of registered case per capita (ln scale)",y = "Number of registered death per capita")  +
+  scale_x_continuous( trans = log_trans() )
+
+
+# log-log
+p4 <- ggplot( df , aes(x = confirmed_per_capita, y = death_per_capita)) +
+  geom_point() +
+  geom_smooth(method="loess")+
+  labs(x = "Number of registered case per capita (ln scale)",y = "Number of registered death per capita (ln scale)")  +
+  scale_y_continuous( trans = log_trans() ) +
+  scale_x_continuous( trans = log_trans() )
+
+ggarrange(p1, p2, p3, p4,
+                    labels = c("A", "B", "C", "D"),
+                    ncol = 2, nrow = 2)
+
+```
+
+## Estimating diﬀerent models
+According to the assignment description, I experimented with the following models:
+
+Model 1: $y^{E}$ = $\alpha$ + $\beta$x
+
+Model 2: $y^{E}$ = $\alpha$ + $\beta_{1}$x + $\beta_{2}$${x}^{2}$
+
+Model 3: $y^{E}$ = $\alpha_{1}$ + $\beta_{1}$x[if x < 0.001] + ($\alpha_{1}$ + $\beta_{2}$x)[if x $\ge$ 0.001]
+
+Model 4: Simple linear regression weighted with population
+
+
+```{r, include=FALSE}
+reg1 <- lm_robust( ln_death_per_capita ~ ln_confirmed_per_capita , data = df , se_type = "HC2" )
+reg1_plot <- ggplot( data = df, aes( x = ln_confirmed_per_capita, y = ln_death_per_capita ) ) + 
+  geom_point( color='blue') +
+  geom_smooth( method = lm , color = 'red' )
+
+reg2 <- lm_robust( ln_death_per_capita ~ ln_confirmed_per_capita + ln_confirmed_per_capita_sq , data = df )
+reg2_plot <-ggplot( data = df, aes( x = ln_confirmed_per_capita, y = ln_death_per_capita ) ) + 
+  geom_point( color='blue') +
+  geom_smooth( formula = y ~ poly(x,2) , method = lm , color = 'red' )
+
+cutoff <- 0.001
+cutoff_ln<- log( cutoff )
+reg3 <- lm_robust(ln_death_per_capita ~ lspline( ln_confirmed_per_capita , cutoff_ln ), data = df )
+reg3_plot <- ggplot( data = df, aes( x = ln_confirmed_per_capita, y = ln_death_per_capita ) ) + 
+  geom_point( color='blue') +
+  geom_smooth( formula = y ~ lspline(x,cutoff_ln) , method = lm , color = 'red' )
+
+reg4 <- lm_robust( ln_death_per_capita ~ ln_confirmed_per_capita , data = df , weights = population )
+reg4_plot <-ggplot(data = df, aes(x = ln_confirmed_per_capita, y = ln_death_per_capita)) +
+  geom_point(data = df, aes(size=population),  color = 'blue', shape = 16, alpha = 0.6,  show.legend=F) +
+  geom_smooth(aes(weight = population), method = "lm", color='red')+
+  scale_size(range = c(1, 15))
+```
+
+
+```{r echo=F, message=F}
+ggarrange(reg1_plot, reg2_plot, reg3_plot, reg4_plot,
+                    labels = c("Model 1", "Model 2", "Model 3", "Model 4"),
+                    ncol = 2, nrow = 2)
+```
+
+
+```{r, results = 'asis', echo = FALSE}
+htmlreg( list(reg1 , reg2 , reg3 , reg4),
+         type = 'html',
+         custom.model.names = c("linear","quadratic","PLS", "weighted linear"),
+         caption = "Modelling death per capita and number of confirmed cases per capita of countries",
+         stars = c(0.001, 0.01, 0.05, 0.1))
+```
+#### Substative reasoning
+I have chosen Model 1  from these four models, however all of them catches the pattern of the data pretty well. In this case it is beneficial to choose the simplest model, which is Model 1 in my case. The log-log interpretation works well, and the magnitude of coefficients are meaningful. The next model, which is fairly good also, is Model 4 with population weight. With that model, we are taking greater countries into account with a more weight, however, as we are already using per capita measures, we do not need to take this into account again.
+
+#### Statistical reasoning
+As we can see from the summary table, the R2 of the models are almost same, except for Model 4 which is higher. However I have not chosen Model 4 because we already took the population into account in Model 1 as well, as we are using per capita measures. Additionally the first model is simpler also, therefore I will go on with model 1.
