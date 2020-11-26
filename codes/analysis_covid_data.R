@@ -63,8 +63,8 @@ df %>% filter( death == 0 )
 
 ######
 # Create new variables: Total death per capita, registered cases per capita according to my assigment description
-df <- df %>% mutate( death_per_capita = death/population )
-df <- df %>% mutate( confirmed_per_capita = confirmed/population )
+df <- df %>% mutate( death_per_capita = death/(population/1000000) )
+df <- df %>% mutate( confirmed_per_capita = confirmed/(population/1000000) )
 
 
 # Take Log of confirmed_per_capita and death_per_capita
@@ -77,7 +77,6 @@ df_replaced <- df %>% mutate_if(is.numeric, function(x) ifelse(is.infinite(x), -
 # On the main thread I will work with the dataframe in which countries with zero death are neglected 
 # Countries with zero deaths can be neglected, as we can say, that they do not belong to the question, of this analyses, as they have no
 # registered deaths from covid-19. However, of course some can argue with this statement. 
-# For that I made some experiment where I replaced -Inf ln_death_per_capita with a "small" number. (see in appendix)
 df <- df %>% filter( ln_death_per_capita != -Inf )
 
 #To plot only meaningful variables at this point
@@ -108,35 +107,27 @@ summary( df_to_plot )
 ggplot( df , aes(x = confirmed_per_capita, y = death_per_capita)) +
   geom_point() +
   geom_smooth(method="loess")+
-  labs(x = "Number of registered case per capita",y = "Number of registered death per capita") 
+  labs(x = "Number of registered case per 1 million capita",y = "Number of registered death per 1 million capita") 
 
 # log-level
 ggplot( df , aes(x = confirmed_per_capita, y = death_per_capita)) +
   geom_point() +
   geom_smooth(method="loess")+
-  labs(x = "Number of registered case per capita",y = "Number of registered death per capita (ln scale)")  +
+  labs(x = "Number of registered case per 1 million capita",y = "Number of registered death per 1 million capita (ln scale)")  +
   scale_y_continuous( trans = log_trans() )
 
 # level-log
 ggplot( df , aes(x = confirmed_per_capita, y = death_per_capita)) +
   geom_point() +
   geom_smooth(method="loess")+
-  labs(x = "Number of registered case per capita (ln scale)",y = "Number of registered death per capita")  +
+  labs(x = "Number of registered case per 1 million capita (ln scale)",y = "Number of registered death per 1 million capita")  +
   scale_x_continuous( trans = log_trans() )
-
 
 # log-log
 ggplot( df , aes(x = confirmed_per_capita, y = death_per_capita)) +
   geom_point() +
   geom_smooth(method="loess")+
-  labs(x = "Number of registered case per capita (ln scale)",y = "Number of registered death per capita (ln scale)")  +
-  scale_y_continuous( trans = log_trans() ) +
-  scale_x_continuous( trans = log_trans() )
-
-ggplot( df_with_no_death , aes(x = confirmed_per_capita, y = death_per_capita)) +
-  geom_point() +
-  geom_smooth(method="loess")+
-  labs(x = "Number of registered case per capita (ln scale)",y = "Number of registered death per capita (ln scale)")  +
+  labs(x = "Number of registered case per 1 million capita (ln scale)",y = "Number of registered death per 1 million capita (ln scale)")  +
   scale_y_continuous( trans = log_trans() ) +
   scale_x_continuous( trans = log_trans() )
 
@@ -181,7 +172,7 @@ ggplot( data = df, aes( x = ln_confirmed_per_capita, y = ln_death_per_capita ) )
   geom_smooth( formula = y ~ poly(x,2) , method = lm , color = 'red' )
 
 # Third model:
-cutoff <- 0.001
+cutoff <- 3000
 cutoff_ln<- log( cutoff )
 
 # Use simple regression with the lspline function
@@ -235,7 +226,7 @@ summary( reg1 )
 
 #The same result in a nother way:
 library(car)
-linearHypothesis( reg4 , "ln_confirmed_per_capita = 0")
+res <- linearHypothesis( reg1 , "ln_confirmed_per_capita = 0")
 
 
 ######

@@ -2,7 +2,7 @@
 title: "Assignment - Data Analysis 2 and Coding with R"
 author: "David Utassy"
 date: "11/24/2020"
-output: html_document
+output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
@@ -14,7 +14,7 @@ knitr::opts_chunk$set(echo = TRUE)
 My task is to analyze the pattern of association between registered covid-19 cases per capita and registered number of death per capita in countries due to covid-19 on 05/11/2020.
 
 My variables are: "Number of registered death per capita" and "Number of registered case per capita" (Y and X). In every observation (row), I have both variables from a country on a given the date. These are the registered data from each country according to their official records. These data should be recorded by taking covid-19 tests.
-Of course we can have there are lot of possible data quality issues. For example political, economical affect on a given country's data can be significant, as they try to hide their real data sometimes. On the other hand differences between infrastructure and health care system can also have huge affect on our data. 
+Of course there are lot of possible data quality issues. For example political, economical affect on a given country's data can be significant, as they try to hide their real data sometimes. On the other hand differences between infrastructure and health care system can also have huge affect on our data. 
 
 
 ## Selecting observations
@@ -51,6 +51,8 @@ theme_set(
   theme_bw() +
     theme(legend.position = "top")
   )
+library(moments)
+library(xtable)
 
 # Call the data from github
 my_url <- "https://raw.githubusercontent.com/utassydv/covid-19_analysis/main/data/clean/covid_pop_11-05-2020_clean.csv"
@@ -60,8 +62,8 @@ df <- read_csv( my_url )
 ## Histogram and summary statistics for x and y
 
 ```{r, echo=FALSE, message=FALSE, fig.width=8, fig.height=2, warning=FALSE}
-df <- df %>% mutate( death_per_capita = death/population )
-df <- df %>% mutate( confirmed_per_capita = confirmed/population )
+df <- df %>% mutate( death_per_capita = death/(population/1000000) )
+df <- df %>% mutate( confirmed_per_capita = confirmed/(population/1000000) )
 
 
 # Take Log of confirmed_per_capita and death_per_capita
@@ -82,18 +84,55 @@ df <- df %>% mutate( ln_confirmed_per_capita_sq = ln_confirmed_per_capita^2)
 #To plot only meaningful variables at this point
 df_to_plot <- df %>% select( c(death_per_capita, confirmed_per_capita))
 
-#checking the distribution of our x and y variable, it can be easy seen, that the ln transformed variables have a more symetric distribution
-df_to_plot %>%
-  keep(is.numeric) %>% 
-  gather() %>% 
-  ggplot(aes(value)) +
-  facet_wrap(~key, scales = "free") +
-  geom_histogram()+
-  theme_wsj() + 
-  scale_fill_wsj()
+
+p1<- ggplot( df , aes( x = death_per_capita ) ) +
+    geom_histogram( aes(y = ..density..) , alpha = 1, binwidth = 50, color = 'black', fill = 'white') +
+    geom_density( aes(y = ..density..) , alpha = .2 , bw = 50, color = 'black', fill="#FF6666") +
+    labs(x='Death per 1 million capita',y='Density')
+p2<- ggplot( df , aes( x = confirmed_per_capita ) ) +
+    geom_histogram( aes(y = ..density..) , alpha = 1, binwidth = 2000, color = 'black', fill = 'white') +
+    geom_density( aes(y = ..density..) , alpha = .2 , bw = 2000, color = 'black', fill="#56B4E9") +
+    labs(x='Confirmed COVID-19 cases per 1 million capita',y='Density')
+
+
+
 # all the distributions look lognormal for the first blink, skewed with a right tail
-summary( df_to_plot )
+ 
+death_per_capita_sum <- df %>% summarise(
+  variable = 'Death per capita',
+  mean     = mean(death_per_capita),
+  median   = median(death_per_capita),
+  std      = sd(death_per_capita),
+  iq_range = IQR(death_per_capita), 
+  min      = min(death_per_capita),
+  max      = max(death_per_capita),
+  skew     = skewness(death_per_capita),
+  numObs   = sum( !is.na( death_per_capita ) ) )
+
+confirmed_per_capita_sum <- df %>% summarise(
+  variable = 'Confirmed cases per capita',
+  mean     = mean(confirmed_per_capita),
+  median   = median(confirmed_per_capita),
+  std      = sd(confirmed_per_capita),
+  iq_range = IQR(confirmed_per_capita), 
+  min      = min(confirmed_per_capita),
+  max      = max(confirmed_per_capita),
+  skew     = skewness(confirmed_per_capita),
+  numObs   = sum( !is.na( confirmed_per_capita ) ) )
+
+df_summary <- death_per_capita_sum %>% add_row( confirmed_per_capita_sum ) 
+
+xtb <- xtable(df_summary, type = "html", caption = "Summary statistics of `Confirmed cases per capita` and `Confirmed death per capita` variables")
 ```
+
+```{r fig 1, fig.width=8,fig.height=1.5,  echo = FALSE , results = 'asis', warning = FALSE, message = FALSE }
+ggarrange(p1, p2, nrow = 1 )
+```
+
+```{r, echo = FALSE , results = "asis", warning = FALSE, message = FALSE }
+print(xtb, comment=FALSE, include.rownames=FALSE) #type="html"
+```
+
 From the summary statistics, we can see, that both variables are skewed with a right tail. We can observe this on the distribution diagrams and also from the summary statistics. We can say that the distributions are mostly lognormal, hence it is likely that a log transformation on both axis will be beneficial. The mean is greater then the median with both variables which is the sign of skewness as well.
 
 ## Investigate the transformation of variables
