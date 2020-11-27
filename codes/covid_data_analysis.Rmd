@@ -1,7 +1,7 @@
 ---
 title: "Assignment - Data Analysis 2 and Coding with R"
 author: "David Utassy"
-date: "11/24/2020"
+date: "11/27/2020"
 output: 
   html_document
   #pdf_document
@@ -55,7 +55,6 @@ theme_set(
     theme(legend.position = "top")
   )
 library(moments)
-library(xtable)
 library(kableExtra)
 
 # Call the data from github
@@ -134,7 +133,7 @@ kbl(df_summary, digits = 2) %>% kable_styling(bootstrap_options = "striped", ful
 From the summary statistics, we can see, that both variables are skewed with a right tail. We can observe this on the distribution diagrams and also from the summary statistics. We can say that the distributions are mostly lognormal, hence it is likely that a log transformation on both axes will be beneficial. The mean is greater than the median with both variables which is a sign of skewness as well.
 
 ## Investigate the transformation of variables
-According to the x and y variable distributions, we should get the best result with log-log. In the appendix, I am showing the plots of all the possible transformations and offering substantive and statistical reasoning. From those graphs, we can also see the log-log option is the best as it makes the association close to linear! For this reason from now on, I will use the ln_confirmed_per_capita and ln_death_per_capita variables as x and y variables.
+According to the x and y variable distributions, we should get the best result with the log-log option. In the appendix, I am showing the plots of all the possible transformations and offering substantive and statistical reasoning. From those graphs, we can also see the log-log option is the best as it makes the association close to linear! Statistically speaking, log transformations are needed also, as the original variables are skewed, and following a lognormal distribution. For a substantive reason, using log transformation is beneficial as after that, we can interpret results by using percentage changes, which is reasonable with these variables. For this reason from now on, I will use the ln_confirmed_per_capita and ln_death_per_capita variables as x and y variables. 
 
 ## Presentation of my model choice
 According to the assignment description I experimented with 4 models, in the appendix, I am reasoning my choice of model.
@@ -244,6 +243,7 @@ ggarrange(p1, p2, p3, p4,
                     ncol = 2, nrow = 2)
 
 ```
+\newpage
 
 ## Estimating diﬀerent models
 According to the assignment description, I experimented with the following models:
@@ -252,7 +252,7 @@ Model 1: $y^{E}$ = $\alpha$ + $\beta$x
 
 Model 2: $y^{E}$ = $\alpha$ + $\beta_{1}$x + $\beta_{2}$${x}^{2}$
 
-Model 3: $y^{E}$ = $\alpha_{1}$ + $\beta_{1}$x[if x < 0.001] + ($\alpha_{1}$ + $\beta_{2}$x)[if x $\ge$ 0.001]
+Model 3: $y^{E}$ = $\alpha_{1}$ + $\beta_{1}$x[if x < 3000] + ($\alpha_{1}$ + $\beta_{2}$x)[if x $\ge$ 3000]
 
 Model 4: Simple linear regression weighted with population
 
@@ -261,23 +261,27 @@ Model 4: Simple linear regression weighted with population
 reg1 <- lm_robust( ln_death_per_capita ~ ln_confirmed_per_capita , data = df , se_type = "HC2" )
 reg1_plot <- ggplot( data = df, aes( x = ln_confirmed_per_capita, y = ln_death_per_capita ) ) + 
   geom_point( color='blue') +
+  labs(x = "Number of registered case per capita (ln scale)",y = "Number of registered death per capita (ln scale)")  +
   geom_smooth( method = lm , color = 'red' )
 
 reg2 <- lm_robust( ln_death_per_capita ~ ln_confirmed_per_capita + ln_confirmed_per_capita_sq , data = df )
 reg2_plot <-ggplot( data = df, aes( x = ln_confirmed_per_capita, y = ln_death_per_capita ) ) + 
   geom_point( color='blue') +
+  labs(x = "Number of registered case per capita (ln scale)",y = "Number of registered death per capita (ln scale)")  +
   geom_smooth( formula = y ~ poly(x,2) , method = lm , color = 'red' )
 
-cutoff <- 0.001
+cutoff <- 3000
 cutoff_ln<- log( cutoff )
 reg3 <- lm_robust(ln_death_per_capita ~ lspline( ln_confirmed_per_capita , cutoff_ln ), data = df )
 reg3_plot <- ggplot( data = df, aes( x = ln_confirmed_per_capita, y = ln_death_per_capita ) ) + 
   geom_point( color='blue') +
+  labs(x = "Number of registered case per capita (ln scale)",y = "Number of registered death per capita (ln scale)")  +
   geom_smooth( formula = y ~ lspline(x,cutoff_ln) , method = lm , color = 'red' )
 
 reg4 <- lm_robust( ln_death_per_capita ~ ln_confirmed_per_capita , data = df , weights = population )
 reg4_plot <-ggplot(data = df, aes(x = ln_confirmed_per_capita, y = ln_death_per_capita)) +
   geom_point(data = df, aes(size=population),  color = 'blue', shape = 16, alpha = 0.6,  show.legend=F) +
+  labs(x = "Number of registered case per capita (ln scale)",y = "Number of registered death per capita (ln scale)")  +
   geom_smooth(aes(weight = population), method = "lm", color='red')+
   scale_size(range = c(1, 15))
 ```
@@ -286,16 +290,18 @@ reg4_plot <-ggplot(data = df, aes(x = ln_confirmed_per_capita, y = ln_death_per_
 ```{r, echo=FALSE, message=FALSE, fig.width=10, fig.height=7, warning=FALSE}
 ggarrange(reg1_plot, reg2_plot, reg3_plot, reg4_plot,
                     labels = c("Model 1", "Model 2", "Model 3", "Model 4"),
+                    label.x = 0.1,
+                    label.y = 0.9,
                     ncol = 2, nrow = 2)
 ```
 
 
 ```{r, results = 'asis', echo = FALSE}
-htmlreg( list(reg1 , reg2 , reg3 , reg4),
-         type = 'latex',
-         custom.model.names = c("linear","quadratic","PLS", "weighted linear"),
-         caption = "Modelling death per capita and number of confirmed cases per capita of countries",
-         stars = c(0.001, 0.01, 0.05, 0.1))
+ htmlreg( list(reg1 , reg2 , reg3 , reg4)) #only include when knitting html
+```
+
+```{r, results = 'asis', echo = FALSE}
+texreg(list(reg1 , reg2 , reg3 , reg4), table = FALSE, use.packages = FALSE)
 ```
 #### Substantive reasoning
 I have chosen Model 1 from these four models, however, all of them catch the pattern of the data pretty well. In this case, it is beneﬁcial to choose the simplest model, which is Model 1 in my case. The log-log interpretation works well, and the magnitude of coeﬃcients are meaningful. The next model, which is fairly good also, is Model 4 with population weight. With that model, we are taking greater countries into account with more weight, however, as we are already using per capita measures, we do not need to take this into account again.
