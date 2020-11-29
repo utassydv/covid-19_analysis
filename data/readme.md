@@ -1,0 +1,3 @@
+The data is collected from World Development Indicators maintained by World Bank and John Hopkins Hospital's [github repo](https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_daily_reports) and saved it to raw files.
+
+The collected data contains countries with their life expectancy (at birth) and the wealth measure of GDP per capita. See more in the subfolders' variable.xlsx.
